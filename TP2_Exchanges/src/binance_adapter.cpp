@@ -1,5 +1,4 @@
 #include "pch.h"
-
 #include "include/tp2_exchanges/binance_adapter.hpp"
 #include "include/tp2_net/http.hpp"
 #include "include/tp2_net/websocket.hpp"
