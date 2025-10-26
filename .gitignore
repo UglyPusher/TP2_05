@@ -1,0 +1,34 @@
+# Build artifacts
+/[Bb]uild/
+/x64/
+/Debug/
+/Release/
+/ipch/
+/*.opendb
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.log
+*.tlog
+*.pch
+*.tmp
+*.cache
+*.user
+*.VC.db
+/.vs/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+*.cmake
+Makefile
+_install/
+compile_commands.json
+
+# Others
+*.zip
+*.patch
+/secret/
+

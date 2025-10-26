@@ -1,0 +1,2 @@
+add_library(MSG5_StrategySDK INTERFACE)
+target_include_directories(MSG5_StrategySDK INTERFACE include)
