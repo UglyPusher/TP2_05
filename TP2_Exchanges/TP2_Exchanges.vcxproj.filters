@@ -19,6 +19,12 @@
     <Filter Include="Файлы заголовков\include">
       <UniqueIdentifier>{bca00eb9-5c5a-49be-9c8f-654b87d03748}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Файлы заголовков\include\parsers">
+      <UniqueIdentifier>{3fe6a6c1-728f-4728-b559-772e228aba42}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Исходные файлы\src\parsers">
+      <UniqueIdentifier>{80d4b80f-bd6d-4567-8446-29532a57cff5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -42,6 +48,9 @@
     <ClInclude Include="include\tp2_exchanges\orderbook_assembler.hpp">
       <Filter>Файлы заголовков\include</Filter>
     </ClInclude>
+    <ClInclude Include="include\tp2_exchanges\parsers\bybit_v5.hpp">
+      <Filter>Файлы заголовков\include\parsers</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TP2_Exchanges.cpp">
@@ -64,6 +73,9 @@
     </ClCompile>
     <ClCompile Include="src\orderbook_assembler.cpp">
       <Filter>Исходные файлы\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\parsers\bybit_v5.cpp">
+      <Filter>Исходные файлы\src\parsers</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

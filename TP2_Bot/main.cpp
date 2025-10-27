@@ -1,4 +1,4 @@
-#include <iostream>
+ï»¿#include <iostream>
 #include <fstream>
 #include <string>
 #include <memory>
@@ -7,6 +7,9 @@
 #include "include/tp2_exchanges/binance_adapter.hpp"
 #include "include/tp2_exchanges/bybit_adapter.hpp"
 #include "include/tp2_exchanges/sim_adapter.hpp"
+
+#include "include/tp2_net/http_winhttp.hpp"
+#include "include/tp2_net/websocket_winhttp.hpp"
 
 static std::string slurp(const std::string& path) {
     std::ifstream f(path);
@@ -20,8 +23,11 @@ int main(int argc, char** argv) {
     std::string cfg = slurp(config);
     if(cfg.empty()) std::cerr << "[bot] WARN: config not found or empty\n";
 
-    auto http = std::make_shared<TP2::net::DummyHttpClient>();
-    auto ws   = std::make_shared<TP2::net::DummyWebSocket>();
+    auto http = std::make_shared<TP2::net::WinHttpClient>();
+    http->set_timeout(15000, 15000, 30000);
+
+    //auto http = std::make_shared<TP2::net::DummyHttpClient>();
+    auto ws   = std::make_shared<TP2::net::WinWebSocketClient>();
 
     TP2::ex::BinanceAdapter binance(http, ws);
     TP2::ex::BybitAdapter   bybit(http, ws);
@@ -29,34 +35,39 @@ int main(int argc, char** argv) {
 
     std::cout << "[bot] exchanges: " << binance.name() << ", " << bybit.name() << ", " << sim.name() << "\n";
     std::cout << "[bot] OK (skeleton).\n";
+    
+    // 1) Ð‘Ñ‹ÑÑ‚Ñ€Ñ‹Ð¹ REST smoke: Ð¿Ð¾Ð´Ñ‚ÑÐ½ÐµÐ¼ Ñ€ÐµÐ°Ð»ÑŒÐ½Ñ‹Ð¹ ÑÐ½Ð°Ð¿ÑˆÐ¾Ñ‚ Bybit Ð¸ Ð²Ñ‹Ð²ÐµÐ´ÐµÐ¼ Ñ‚Ð¾Ð¿-1
+    {
+        auto ob = bybit.get_orderbook("ETHUSDT", 5);
+        if (ob.seq == 0 && ob.bids.empty() && ob.asks.empty()) {
+            std::cerr << "[bybit][REST] FAIL: empty snapshot (network? rate limit?)\n";
+        }
+        else {
+            std::cout << "[bybit][REST] seq=" << ob.seq << " ts=" << ob.ts
+                << " bids=" << ob.bids.size() << " asks=" << ob.asks.size() << "\n";
+            if (!ob.bids.empty()) std::cout << "  REST best bid: " << ob.bids[0].p << " / " << ob.bids[0].q << "\n";
+            if (!ob.asks.empty()) std::cout << "  REST best ask: " << ob.asks[0].p << " / " << ob.asks[0].q << "\n";
+        }
+        
+    }
 
 
-    // Ïîäïèñêà è ïå÷àòü 1–2 àïäåéòîâ
-    bybit.subscribe_orderbook("BTCUSDT", 5, [](const TP2::ex::OrderBook& ob) {
+    // ÐŸÐ¾Ð´Ð¿Ð¸ÑÐºÐ° Ð¸ Ð¿ÐµÑ‡Ð°Ñ‚ÑŒ 1â€“2 Ð°Ð¿Ð´ÐµÐ¹Ñ‚Ð¾Ð²
+    bybit.subscribe_orderbook("ETHUSDT", 5, [](const TP2::ex::OrderBook& ob) {
         std::cout << "[OB] seq=" << ob.seq << " ts=" << ob.ts
             << " bids=" << ob.bids.size() << " asks=" << ob.asks.size() << "\n";
         if (!ob.bids.empty()) std::cout << "  best bid: " << ob.bids[0].p << " / " << ob.bids[0].q << "\n";
         if (!ob.asks.empty()) std::cout << "  best ask: " << ob.asks[0].p << " / " << ob.asks[0].q << "\n";
         });
 
-    // Ñûìèòèðóåì WS-ñíàïøîò è äåëüòó (DummyWebSocket îòäàåò on_message(msg) ïðè send(msg))
-    const char* bybit_snapshot = R"({
-  "topic":"orderbook.50.BTCUSDT","type":"snapshot","ts": 1730000000000,
-  "data":{"s":"BTCUSDT","u": 1000,
-    "b":[["65000.0","0.3"],["64999.5","0.2"]],
-    "a":[["65010.0","0.4"],["65011.0","0.1"]]
-  }
-})";
-    const char* bybit_delta = R"({
-  "topic":"orderbook.50.BTCUSDT","type":"delta","ts": 1730000000100,
-  "data":{"s":"BTCUSDT","u": 1001,
-    "b":[["65000.0","0.5"]], "a":[["65010.0","0.0"]]
-  }
-})";
+    // Ð¶Ð´Ñ‘Ð¼ 15 ÑÐµÐºÑƒÐ½Ð´ ÑÑ‚Ñ€Ð¸Ð¼Ð°
+    auto t_end = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (std::chrono::steady_clock::now() < t_end) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
 
-    ws->send(bybit_snapshot);
-    ws->send(bybit_delta);
-
-
+    // Ð°ÐºÐºÑƒÑ€Ð°Ñ‚Ð½Ð¾ Ð·Ð°ÐºÑ€Ñ‹Ð²Ð°ÐµÐ¼ ÑÐ¾ÐºÐµÑ‚ Ð¸ Ð²Ñ‹Ñ…Ð¾Ð´Ð¸Ð¼
+    ws->close();
+    std::cout << "[bybit][WS] streaming stopped (15s)\n";
     return 0;
 }

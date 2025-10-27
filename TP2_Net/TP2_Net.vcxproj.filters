@@ -30,7 +30,13 @@
     <ClInclude Include="include\tp2_net\http.hpp">
       <Filter>Файлы заголовков\include</Filter>
     </ClInclude>
+    <ClInclude Include="include\tp2_net\http_winhttp.hpp">
+      <Filter>Файлы заголовков\include</Filter>
+    </ClInclude>
     <ClInclude Include="include\tp2_net\websocket.hpp">
+      <Filter>Файлы заголовков\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\tp2_net\websocket_winhttp.hpp">
       <Filter>Файлы заголовков\include</Filter>
     </ClInclude>
   </ItemGroup>
@@ -45,6 +51,12 @@
       <Filter>Исходные файлы\src</Filter>
     </ClCompile>
     <ClCompile Include="src\websocket_dummy.cpp">
+      <Filter>Исходные файлы\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\http_client_winhttp.cpp">
+      <Filter>Исходные файлы\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\websocket_client_winhttp.cpp">
       <Filter>Исходные файлы\src</Filter>
     </ClCompile>
   </ItemGroup>

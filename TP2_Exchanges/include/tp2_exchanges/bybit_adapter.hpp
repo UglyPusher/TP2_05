@@ -20,16 +20,5 @@ public:
 private:
     std::shared_ptr<TP2::net::IHttpClient> http_;
     std::shared_ptr<TP2::net::IWebSocket> ws_;
-
-    // --- Вспомогательное: минимальный парсер JSON ровно под формат Bybit V5 ---
-    struct ParsedBook {
-        bool is_snapshot{ false };
-        uint64_t seq{ 0 };
-        long long ts{ 0 };
-        std::vector<OrderBookLevel> bids, asks;
-    };
-    
-    static bool parse_ws_message(std::string_view json, ParsedBook & out, int limit_levels);
-    static bool parse_rest_snapshot(std::string_view json, ParsedBook & out, int limit_levels);
 };
 } // namespace msg5::ex

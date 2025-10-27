@@ -37,8 +37,8 @@ namespace TP2::ex {
             if (!healthy_) return false;
 
             if (seq_ != 0 && d.seq != 0) {
-                if (d.seq < seq_) return true;            // старая дельта — игнор
-                if (d.seq > seq_ + 1) { healthy_ = false; return false; } // gap
+                if (d.seq <= seq_) return true;            // старая дельта — игнор
+                //if (d.seq > seq_ + 1) { healthy_ = false; return false; } // gap
                 seq_ = d.seq;
             }
             if (d.ts) ts_ = std::max<int64_t>(ts_, d.ts);
