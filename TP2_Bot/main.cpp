@@ -70,6 +70,13 @@ int main(int argc, char** argv) {
     
     TP2::ex::BybitAdapter   bybit(http, ws);
 
+    // Явный коннект WS — один раз
+    if (!bybit.connect_public_ws()) {
+        std::cerr << "[bot] WS connect failed\n";
+        return 3;
+    }
+    
+    // Подписка и печать 1–2 апдейтов
     std::cout << "[bot] exchanges: " << bybit.name() << "\n";
     std::cout << "[bot] OK (skeleton).\n";
     
@@ -93,6 +100,11 @@ int main(int argc, char** argv) {
             << " bids=" << ob.bids.size() << " asks=" << ob.asks.size() << "\n";
         if (!ob.bids.empty()) std::cout << "  best bid: " << ob.bids[0].p << " / " << ob.bids[0].q << "\n";
         if (!ob.asks.empty()) std::cout << "  best ask: " << ob.asks[0].p << " / " << ob.asks[0].q << "\n";
+        });
+        
+
+    bybit.subscribe_trades_raw(symbol, [](std::string_view raw) {
+        std::cout << "[TRADES] " << raw << "\n";
         });
 
     // ждём 15 секунд стрима
