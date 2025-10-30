@@ -2,7 +2,22 @@
 #include <iostream>
 #include "include/tp2_net/websocket_winhttp.hpp"
 #include <stdexcept>
+
+#ifndef NOMINMAX
+#define NOMINMAX 1     // не позволяем Windows.h определять макросы min/max
+#endif
 #include <windows.h>
+
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
+#include <algorithm>
+#include <cctype>    // std::isdigit
+#include <climits>   // INT_MAX
 
  #ifndef WINHTTP_WEB_SOCKET_PING_BUFFER_TYPE
 // Fallback для старых SDK: см. enum WINHTTP_WEB_SOCKET_BUFFER_TYPE
@@ -14,6 +29,7 @@
 
 namespace TP2::net {
 
+    /*
     struct UrlParts {
         bool   secure = false;        // https/wss → true
         std::wstring host;            // L"stream.bybit.com"
@@ -79,29 +95,48 @@ namespace TP2::net {
         out.port = port;
         out.path_query = utf8_to_wide(path_utf8);
         return out;
-    }
+    }*/
     
-WinWebSocketClient::WinWebSocketClient() {
+    // -------- file-local helpers -------------------------------------------------
+    namespace {
+        // UTF-8 -> UTF-16 with validation; file-static to avoid ODR issues.
+        inline std::wstring to_wide_impl(std::string_view s) {
+            if (s.empty()) return {};
+            if (s.size() > static_cast<size_t>(INT_MAX)) return {};;
+            const int in_len = static_cast<int>(s.size());
+            int n = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), in_len, nullptr, 0);
+            if (n <= 0) return {};
+            std::wstring w(static_cast<size_t>(n), L'\0');
+            int m = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), in_len, w.data(), n);
+            if (m <= 0) return {};
+            if (m != n) w.resize(static_cast<size_t>(m));
+            return w;
+        }
+
+        // case-insensitive префикс для ASCII-схем (http/https/ws/wss)
+        inline bool ci_starts_with(const std::string & s, const char* pfx) {
+            const size_t n = std::strlen(pfx);
+            return s.size() >= n && ::_strnicmp(s.data(), pfx, n) == 0;
+        }
+    } // namespace
+    
+    WinWebSocketClient::WinWebSocketClient() {
     hSession_ = WinHttpOpen(L"TP2/WinWebSocketClient",
                             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                             WINHTTP_NO_PROXY_NAME,
                             WINHTTP_NO_PROXY_BYPASS, 0);
-}
+    }
+    WinWebSocketClient::~WinWebSocketClient() {
+        close();
+        if (hSession_) { WinHttpCloseHandle(hSession_); hSession_ = nullptr; }
+    }
 
-WinWebSocketClient::~WinWebSocketClient() {
-    close();
-    if (hSession_) { WinHttpCloseHandle(hSession_); hSession_ = nullptr; }
-}
+    std::wstring WinWebSocketClient::to_wide(const std::string& s) {
+        return to_wide_impl(s);
+    }
 
-std::wstring WinWebSocketClient::to_wide(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
-    std::wstring w(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), w.data(), n);
-    return w;
-}
-
-WinWebSocketClient::UrlParts WinWebSocketClient::crack_url(const std::string& url) {
+    /*
+WinWebSocketClient::UrlParts WinWebSocketClient::crack_url_old(const std::string& url) {
     UrlParts out;
     // 0) Определим, была ли исходно защищённая схема
     const bool src_wss = (url.rfind("wss:", 0) == 0) || (url.rfind("WSS:", 0) == 0);
@@ -140,25 +175,140 @@ WinWebSocketClient::UrlParts WinWebSocketClient::crack_url(const std::string& ur
     if (out.port == 0) out.port = out.secure ? 443 : 80;
     return out;
 }
+*/
 
-void WinWebSocketClient::connect(const std::string & url) {
+WinWebSocketClient::UrlParts WinWebSocketClient::crack_url(const std::string& url)
+{
+    /*
+    OLD crack_url (for reference):
+    // Определяли только http/https, ws/wss обрабатывались криво и могли не ставить secure/порт.
+    // Здесь оставлено как памятка; рабочая реализация ниже.
+    */
+    UrlParts out{};
+    if (url.empty()) return out;
+    
+    // 1) схема
+    
+    bool secure = false;
+    size_t pos = 0;
+    if (ci_starts_with(url, "https://")) { secure = true;  pos = 8; }
+    else if (ci_starts_with(url, "http://")) { secure = false; pos = 7; }
+    else if (ci_starts_with(url, "wss://")) { secure = true;  pos = 6; } // ВАЖНО: wss → secure
+    else if (ci_starts_with(url, "ws://")) { secure = false; pos = 5; } // ВАЖНО: ws  → не secure
+    else {
+        // неизвестная схема
+        return out;
+    }
+    
+    out.secure = secure;
+    
+    // 2) host[:port] (поддержка IPv6 в квадратных скобках)
+    const size_t n = url.size();
+    size_t host_beg = pos;
+    size_t host_end = std::string::npos;
+    INTERNET_PORT port = 0;
+    
+    if (host_beg < n && url[host_beg] == '[') {
+        // IPv6: [fe80::1]
+        size_t rb = url.find(']', host_beg + 1);
+        if (rb == std::string::npos) return out; // некорректный URL
+        host_end = rb + 1; // включает ']'
+        if (host_end < n && url[host_end] == ':') {
+            // порт после IPv6
+            size_t p_beg = host_end + 1;
+            size_t p_end = p_beg;
+            while (p_end < n && std::isdigit((unsigned char)url[p_end])) ++p_end;
+            if (p_end == p_beg) return out; // двоеточие без цифр
+            port = static_cast<INTERNET_PORT>(std::stoi(url.substr(p_beg, p_end - p_beg)));
+            host_end = p_end;
+        }
+    }
+    else {
+        // Обычное имя хоста
+        size_t slash = url.find('/', host_beg);
+        size_t colon = url.find(':', host_beg);
+        if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
+            // есть порт
+            size_t p_beg = colon + 1;
+            size_t p_end = p_beg;
+            while (p_end < n && std::isdigit((unsigned char)url[p_end])) ++p_end;
+            if (p_end == p_beg) return out; // двоеточие без цифр
+            port = static_cast<INTERNET_PORT>(std::stoi(url.substr(p_beg, p_end - p_beg)));
+            host_end = p_beg - 1; // позиция ':'
+            host_end = colon;     // конец host
+            host_end = p_end;     // продвинем для дальнейшего вычисления пути
+            // поправим ниже через вычисление path_beg
+        }
+        else {
+            // порта нет
+            host_end = (slash == std::string::npos) ? n : slash;
+        }
+    }
+    
+    // 3) путь + query
+    size_t path_beg = (url.find('/', host_beg) != std::string::npos)? url.find('/', host_beg): n;
+    
+    // Если мы распарсили явный порт в ветке без IPv6 — path_beg уже найден правильно
+    // Если IPv6 — host_end указывает на ']' или конец числа порта
+    if (path_beg == n) {
+        out.path_query = to_wide("/"); // пустой путь → "/"
+    }
+    else {
+        out.path_query = to_wide(url.substr(path_beg));
+    }
+    
+    // хост (сняв квадратные скобки для IPv6)
+    std::string host_str;
+    if (url[host_beg] == '[') {
+        size_t rb = url.find(']', host_beg + 1);
+        host_str = url.substr(host_beg + 1, rb - (host_beg + 1));
+    }
+    else {
+        size_t host_end_real = (url.find(':', host_beg) != std::string::npos &&
+            (url.find(':', host_beg) < url.find('/', host_beg)))
+            ? url.find(':', host_beg)
+            : ((path_beg == n) ? n : path_beg);
+        host_str = url.substr(host_beg, host_end_real - host_beg);
+    }
+    out.host = to_wide(host_str);
+    
+    // 4) дефолтные порты при их отсутствии
+    if (port == 0) {
+        port = secure ? 443 : 80;
+    }
+    out.port = port;
+    return out;
+}
+
+NetErr WinWebSocketClient::connect(const std::string& url,
+    const WebSocketOptions & opt,
+    const WebSocketHandlers & h) {
     close();
-    if (!hSession_) { std::cerr << "[WS][open][err] no session\n"; return; }
+    if (!hSession_) { 
+        std::cerr << "[WS][open][err] no session\n"; 
+        return NetErr::Unknown;
+    }
+    options_ = opt;
+    handlers_ = h;
 
     auto u = crack_url(url);
     if (u.port == 0 || u.host.empty() || u.path_query.empty()) {
         std::cerr << "[WS][open][err] bad url: " << url << "\n";
-        return;
+        return NetErr::BadUrl;
     }
 
     hConnect_ = WinHttpConnect(hSession_, u.host.c_str(), u.port, 0);
-    if (!hConnect_) { cleanup(); return; }
+    if (!hConnect_) { cleanup(); return NetErr::Connect; }
 
     DWORD flags = u.secure ? WINHTTP_FLAG_SECURE : 0;
     hRequest_ = WinHttpOpenRequest(hConnect_, L"GET", u.path_query.c_str(),
                                    NULL, WINHTTP_NO_REFERER,
                                    WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
-    if (!hRequest_) { std::cerr << "[WS][open][err] WinHttpOpenRequest GLE=" << GetLastError() << "\n"; cleanup(); return; }
+    if (!hRequest_) { 
+        std::cerr << "[WS][open][err] WinHttpOpenRequest GLE=" << GetLastError() << "\n";
+        cleanup();
+        return NetErr::Connect;
+    }
 
     //if (!WinHttpSetOption(hRequest_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0)) { cleanup(); return; }
 
@@ -169,19 +319,33 @@ void WinWebSocketClient::connect(const std::string & url) {
 #pragma warning(suppress:6387)
     if (!WinHttpSetOption(hRequest_, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0)) {
         std::cerr << "[WS][open][err] WinHttpSetOption(UPGRADE) GLE=" << GetLastError() << "\n";
-        cleanup(); return;
+        cleanup(); 
+        return NetErr::Protocol;
     }
 #pragma warning(pop)
+
+    // Если wss — зажимаем TLS >= 1.2 (и 1.3, если доступна в SDK)
+    if (u.secure) {
+        DWORD tls = 0;
+#ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
+        tls = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+#else
+        tls = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+#endif
+        WinHttpSetOption(hRequest_, WINHTTP_OPTION_SECURE_PROTOCOLS, &tls, sizeof(tls));
+    }
 
     if (!WinHttpSendRequest(hRequest_, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
         WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) {
         std::cerr << "[WS][open][err] WinHttpSendRequest GLE=" << GetLastError() << "\n";
-        cleanup(); return;
+        cleanup(); 
+        return NetErr::Connect;
     }
     
     if (!WinHttpReceiveResponse(hRequest_, nullptr)) {
         std::cerr << "[WS][open][err] WinHttpReceiveResponse GLE=" << GetLastError() << "\n";
-        cleanup(); return;
+        cleanup();
+        return NetErr::Protocol;
     }
     
     // Диагностика: статус ответа (ожидаем 101)
@@ -193,7 +357,7 @@ void WinWebSocketClient::connect(const std::string & url) {
     if (!hWebSocket_) {
         std::cerr << "[WS][open][err] WinHttpWebSocketCompleteUpgrade failed, GLE="
             << GetLastError() << "\n";
-        return;
+        return NetErr::Protocol;
     }
     
     std::cout << "[WS][open] upgrade OK\n";
@@ -202,16 +366,18 @@ void WinWebSocketClient::connect(const std::string & url) {
     running_ = true;
     if (reader_.joinable()) reader_.join();
     reader_ = std::thread([this] { reader_loop(); });
+    if (handlers_.on_open) handlers_.on_open();
+    return NetErr::Ok;
 }
 
-void WinWebSocketClient::on_message(std::function<void(std::string_view)> cb) {
+void WinWebSocketClient::on_message(OnMsg cb) {
     cb_ = std::move(cb);
 }
 
-void WinWebSocketClient::send(std::string_view text) {
+NetErr WinWebSocketClient::send(std::string_view text) {
     if (!hWebSocket_) {
         std::cerr << "[WS][send][err] socket is null\n";
-        return;
+        return NetErr::Closed;
     }
 
     auto rc = WinHttpWebSocketSend(hWebSocket_,
@@ -221,7 +387,9 @@ void WinWebSocketClient::send(std::string_view text) {
     if (rc != 0) {
         std::cerr << "[WS][send][err] WinHttpWebSocketSend=" << rc
             << " GetLastError=" << GetLastError() << "\n";
+        return NetErr::Unknown;
     }
+    return NetErr::Ok;
 }
 
 void WinWebSocketClient::reader_loop() {
@@ -255,6 +423,10 @@ void WinWebSocketClient::reader_loop() {
             else {
                 std::cerr << "[WS][close] (no status), GLE=" << GetLastError() << "\n";
             }
+            if (handlers_.on_close) {
+                // гарантия NUL выше; safe cast
+                handlers_.on_close(status, (const char*)reason);
+            }
             break;
         }
 
@@ -272,6 +444,11 @@ void WinWebSocketClient::reader_loop() {
                 pong_len ? (PVOID)buf.data() : NULL,
                 pong_len
             );
+            if (handlers_.on_ping) handlers_.on_ping();
+            continue;
+        }
+        if (tp == WINHTTP_WEB_SOCKET_PONG_BUFFER_TYPE) {
+            if (handlers_.on_pong) handlers_.on_pong();
             continue;
         }
 
@@ -281,7 +458,14 @@ void WinWebSocketClient::reader_loop() {
             case WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE:
             case WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE:
             case WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE:
-                if (cb_) cb_(std::string_view(buf.data(), bytes));
+                if (tp == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE ||
+                    tp == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE) {
+                    if (handlers_.on_text) handlers_.on_text(std::string_view(buf.data(), bytes));
+                    if (cb_)               cb_(std::string_view(buf.data(), bytes)); // legacy
+                }
+                else {
+                    if (handlers_.on_binary) handlers_.on_binary(buf.data(), bytes);
+                }
                 break;
             default:
                 // игнорируем прочие типы
@@ -297,10 +481,13 @@ void WinWebSocketClient::reader_loop() {
     }
 }
 
-void WinWebSocketClient::close() {
+void WinWebSocketClient::close(unsigned short code, std::string_view reason) noexcept {
     running_ = false;
     if (hWebSocket_) {
-        WinHttpWebSocketClose(hWebSocket_, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, NULL, 0);
+        const USHORT status = code;
+        const DWORD  len = (DWORD)std::min<std::size_t>(reason.size(), 123);
+        WinHttpWebSocketClose(hWebSocket_, status,
+            len ? (PVOID)reason.data() : NULL, len);
     }
     if (reader_.joinable()) reader_.join();
     cleanup();

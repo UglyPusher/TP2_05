@@ -113,9 +113,9 @@ namespace TP2::ex {
 
             cb(assembler->snapshot());
             });
-
+        TP2::net::NetErr NetError;
         // 4) Коннект к WS (после регистрации обработчика)
-        ws_->connect("wss://stream.bybit.com/v5/public/spot");
+        NetError = ws_->connect("wss://stream.bybit.com/v5/public/spot");
         // даём стартануть ридеру (на некоторых стекх без этого первые кадры теряются)
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 

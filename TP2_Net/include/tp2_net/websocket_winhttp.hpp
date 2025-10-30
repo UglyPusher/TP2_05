@@ -18,34 +18,45 @@ namespace TP2::net {
 class WinWebSocketClient final : public IWebSocket {
 public:
     WinWebSocketClient();
-    ~WinWebSocketClient() override;
-
-    void connect(const std::string& url) override;
-    void send(std::string_view text) override;
-    void on_message(std::function<void(std::string_view)> cb) override;
-    void close() override;
+    ~WinWebSocketClient() noexcept override;
+    
+    // Новый контракт (см. websocket.hpp)
+    [[nodiscard]] NetErr connect(const std::string & url,
+        const WebSocketOptions & opt = {},
+        const WebSocketHandlers & h = {}) override;
+    [[nodiscard]] NetErr send(std::string_view text) override;
+    void on_message(OnMsg cb) override;
+    void close(unsigned short code = 1000,
+        std::string_view reason = {}) noexcept override;
 
 private:
-    std::function<void(std::string_view)> cb_;
-    std::atomic<bool> running_{false};
-    std::thread reader_;
-
-    HINTERNET hSession_{nullptr};
-    HINTERNET hConnect_{nullptr};
-    HINTERNET hRequest_{nullptr};
-    HINTERNET hWebSocket_{nullptr};
-
     struct UrlParts {
         std::wstring host;
         std::wstring path_query;
-        INTERNET_PORT port{0};
-        bool secure{false};
+        INTERNET_PORT port{ 0 };
+        bool secure{ false };
     };
-    static std::wstring to_wide(const std::string& s);
-    static UrlParts crack_url(const std::string& url);
-
+    
+    static std::wstring to_wide(const std::string & s);
+    static UrlParts     crack_url(const std::string & url);
+    
     void reader_loop();
-    void cleanup();
+
+void cleanup(); 
+
+private:
+    HINTERNET hSession_{ nullptr };
+    HINTERNET hConnect_{ nullptr };
+    HINTERNET hRequest_{ nullptr };
+    HINTERNET hWebSocket_{ nullptr };
+    
+    // Колбэки/опции нового контракта + legacy шорткат
+    WebSocketHandlers handlers_{};
+    WebSocketOptions  options_{};
+    OnMsg             cb_{};           // legacy on_message(text)
+    
+    std::thread       reader_{};
+    std::atomic<bool> running_{ false };
 };
 
 } // namespace TP2::net
