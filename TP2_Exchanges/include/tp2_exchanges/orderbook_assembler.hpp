@@ -17,6 +17,12 @@ namespace TP2::ex {
             double   q{};       // qty (0 => удалить уровень)
         };
 
+        // Настройка жёсткости контроля последовательности:
+        // strict=true → требуем d.seq == last_seq+1 (если обе стороны дают seq)
+        // strict=false → допускаем d.seq > last_seq (перепрыгнули), просто примем и запомним
+        void set_strict(bool v) { strict_seq_ = v; }
+        bool strict() const { return strict_seq_; }
+
         void set_depth(int depth) { depth_ = std::max(1, depth); }
         int  depth() const { return depth_; }
 
@@ -30,6 +36,7 @@ namespace TP2::ex {
             asks_ = std::move(asks);
             trim();
             healthy_ = true;
+            expected_seq_ = (seq_ ? seq_ : 0);
         }
 
         // Применение одной дельты. false => обнаружен gap.
@@ -37,9 +44,19 @@ namespace TP2::ex {
             if (!healthy_) return false;
 
             if (seq_ != 0 && d.seq != 0) {
-                if (d.seq <= seq_) return true;            // старая дельта — игнор
-                //if (d.seq > seq_ + 1) { healthy_ = false; return false; } // gap
+                if (d.seq <= seq_) return true; // старая дельта — игнор
+                if (strict_seq_) {
+                    // требуем точно следующий id
+                    const uint64_t exp = (expected_seq_ ? expected_seq_ + 1 : seq_ + 1);
+                    if (d.seq != exp) { healthy_ = false; return false; } // gap
+                }
                 seq_ = d.seq;
+                expected_seq_ = d.seq;
+            }
+            else if (d.seq != 0) {
+                // если раньше seq_ был 0 (неизвестен), а теперь пришёл — инициализируем
+                seq_ = d.seq;
+                expected_seq_ = d.seq;
             }
             if (d.ts) ts_ = std::max<int64_t>(ts_, d.ts);
 
@@ -84,7 +101,9 @@ namespace TP2::ex {
         }
 
         int depth_{ 50 };
+        bool strict_seq_{ true };
         uint64_t seq_{ 0 };
+        uint64_t expected_seq_{ 0 };
         int64_t  ts_{ 0 };
         bool healthy_{ false };
         std::vector<OrderBookLevel> bids_, asks_;
