@@ -3,7 +3,7 @@
 #include <functional>
 #include <string_view>
 #include <span>
-#include "tp2_exchanges/events.hpp"
+#include "include/tp2_exchanges/events.hpp"
 
 namespace tp2::exchanges {
 

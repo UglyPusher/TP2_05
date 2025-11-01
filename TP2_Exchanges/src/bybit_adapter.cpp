@@ -155,7 +155,7 @@ namespace TP2::ex {
                 if (ob_stale_timeout_ms_ <= 0) return false;
                 int64_t last = ob_last_update_ms_.load();
                 if (last > 0 && (now_ms() - last) > ob_stale_timeout_ms_) {
-                    if (ob_debug_) std::cerr << "[bybit][OB] stale → resync via REST\n";
+                    if (ob_debug_) std::cerr << "[bybit][OB] stale -> resync via REST\n";
                     OrderBook snap = this->get_orderbook(sym, depth);
                     if (!snap.bids.empty() || !snap.asks.empty()) {
                         std::vector<OrderBookLevel> rb = snap.bids, ra = snap.asks;
@@ -195,7 +195,7 @@ namespace TP2::ex {
             }
             
             auto resync = [&]() {
-                if (ob_debug_) std::cerr << "[bybit][OB] gap detected → resync via REST\n";
+                if (ob_debug_) std::cerr << "[bybit][OB] gap detected -> resync via REST\n";
                 ob_resyncs_.fetch_add(1);
                 OrderBook snap = this->get_orderbook(sym, depth);
                 if (snap.bids.empty() && snap.asks.empty()) return; // не удалось ресинкнуться

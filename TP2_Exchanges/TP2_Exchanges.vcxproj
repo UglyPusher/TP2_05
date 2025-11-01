@@ -78,7 +78,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>C:\Users\днс\source\repos\TP2_05\third_party;C:\Users\днс\source\repos\TP2_05\TP2_Net;C:\Users\днс\source\repos\TP2_05\TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third_party;$(SolutionDir)TP2_Net;$(SolutionDir)TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -97,7 +97,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>C:\Users\днс\source\repos\TP2_05\third_party;C:\Users\днс\source\repos\TP2_05\TP2_Net;C:\Users\днс\source\repos\TP2_05\TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third_party;$(SolutionDir)TP2_Net;$(SolutionDir)TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -114,7 +114,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>C:\Users\днс\source\repos\TP2_05\third_party;C:\Users\днс\source\repos\TP2_05\TP2_Net;C:\Users\днс\source\repos\TP2_05\TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third_party;$(SolutionDir)TP2_Net;$(SolutionDir)TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -133,7 +133,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>C:\Users\днс\source\repos\TP2_05\third_party;C:\Users\днс\source\repos\TP2_05\TP2_Net;C:\Users\днс\source\repos\TP2_05\TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)third_party;$(SolutionDir)TP2_Net;$(SolutionDir)TP2_Exchanges;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -146,7 +146,10 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="include\tp2_exchanges\binance_adapter.hpp" />
     <ClInclude Include="include\tp2_exchanges\bybit_adapter.hpp" />
+    <ClInclude Include="include\tp2_exchanges\bybit_transport.hpp" />
+    <ClInclude Include="include\tp2_exchanges\events.hpp" />
     <ClInclude Include="include\tp2_exchanges\exchange.hpp" />
+    <ClInclude Include="include\tp2_exchanges\exchange_transport.hpp" />
     <ClInclude Include="include\tp2_exchanges\orderbook_assembler.hpp" />
     <ClInclude Include="include\tp2_exchanges\parsers\bybit_v5.hpp" />
     <ClInclude Include="include\tp2_exchanges\sim_adapter.hpp" />
@@ -161,6 +164,7 @@
     </ClCompile>
     <ClCompile Include="src\binance_adapter.cpp" />
     <ClCompile Include="src\bybit_adapter.cpp" />
+    <ClCompile Include="src\bybit_transport.cpp" />
     <ClCompile Include="src\exchange_iface.cpp" />
     <ClCompile Include="src\orderbook_assembler.cpp" />
     <ClCompile Include="src\parsers\bybit_v5.cpp" />

@@ -51,6 +51,15 @@
     <ClInclude Include="include\tp2_exchanges\parsers\bybit_v5.hpp">
       <Filter>Файлы заголовков\include\parsers</Filter>
     </ClInclude>
+    <ClInclude Include="include\tp2_exchanges\bybit_transport.hpp">
+      <Filter>Файлы заголовков\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\tp2_exchanges\events.hpp">
+      <Filter>Файлы заголовков\include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\tp2_exchanges\exchange_transport.hpp">
+      <Filter>Файлы заголовков\include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TP2_Exchanges.cpp">
@@ -76,6 +85,9 @@
     </ClCompile>
     <ClCompile Include="src\parsers\bybit_v5.cpp">
       <Filter>Исходные файлы\src\parsers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bybit_transport.cpp">
+      <Filter>Исходные файлы\src</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
