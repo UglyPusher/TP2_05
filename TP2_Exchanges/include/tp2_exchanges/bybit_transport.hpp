@@ -5,6 +5,8 @@
 #include <atomic>
 #include "include/tp2_exchanges/exchange_transport.hpp"
 
+#include "include/tp2_net/websocket.hpp"
+#include "include/tp2_net/websocket_winhttp.hpp"
 namespace tp2::exchanges {
 
 class BybitTransport final : public IExchangeTransport {
@@ -47,6 +49,16 @@ private:
     // служебное
     static std::string ob_topic(std::string_view symbol, int depth);
     static std::string trades_topic(std::string_view symbol);
+
+    // === WS backend ===
+    std::unique_ptr<TP2::net::IWebSocket> ws_;   // WinWebSocketClient
+    std::string ws_url_ = "wss://stream.bybit.com/v5/public/linear";
+    void ws_send_sub_(std::string_view topic);
+    void ws_send_unsub_(std::string_view topic);
+    void ws_on_open_();
+    void ws_on_text_(std::string_view txt);
+    void ws_on_close_(unsigned short code, std::string_view reason);
+    void ws_on_error_(TP2::net::NetErr ec, std::string msg);
 };
 
 } // namespace tp2::exchanges

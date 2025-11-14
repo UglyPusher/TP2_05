@@ -1,5 +1,6 @@
 # Build artifacts
 /[Bb]uild/
+*/x64/
 /x64/
 /Debug/
 /Release/
