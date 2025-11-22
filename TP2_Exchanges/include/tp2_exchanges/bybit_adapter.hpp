@@ -1,13 +1,16 @@
 #pragma once
 #include "exchange.hpp"
 #include <memory>
+#include <chrono>
 namespace TP2 { namespace net { struct IHttpClient; class IWebSocket; } namespace crypto { class ISigner; } }
 
 namespace TP2::ex {
     class BybitAdapter final : public IExchange {
     public:
         BybitAdapter(std::shared_ptr<TP2::net::IHttpClient> http,
-                     std::shared_ptr<TP2::net::IWebSocket> ws);
+                     std::shared_ptr<TP2::net::IWebSocket> ws,
+                    std::shared_ptr<TP2::net::IWebSocket> private_ws = nullptr
+            );
         std::string name() const override { return "bybit"; }
 
         // Явный коннект публичного WS (spot v5). Ставит общий on_message-роутер.
@@ -48,9 +51,21 @@ namespace TP2::ex {
         // Trading (stub for now)
         OrderId place_order(const OrderSpec&) override;
         void cancel_order(std::string_view symbol, std::string_view exch_order_id) override;
+
+        // Cancel all orders
+        void cancel_all_orders(std::string_view symbol) override;
+
+      
     private:
+
+        // Приватный коннект сокета после отправки заявки
+        bool connect_private_ws(const std::string& key, const std::string& secret);
+        bool private_ws_ready_{ false };
+
+
         std::shared_ptr<TP2::net::IHttpClient> http_;
-        std::shared_ptr<TP2::net::IWebSocket> ws_;
+        std::shared_ptr<TP2::net::IWebSocket> ws_; // Обычный сокет
+        std::shared_ptr<TP2::net::IWebSocket> private_ws_; // Приватный сокет
         std::function<void(std::string_view)>  on_trades_raw_;
         std::function<void(std::string_view)>  ob_ws_handler_; // обработчик сырого WS под стакан
         bool ws_ready_{ false };
@@ -74,5 +89,6 @@ namespace TP2::ex {
         // Для шумопонижения: запоминаем последний best bid/ask и время эмиссии
         double ob_last_best_bid_{ 0.0 }, ob_last_best_ask_{ 0.0 };
         std::chrono::steady_clock::time_point ob_last_emit_{};
+        
     };
-} // namespace msg5::ex
+} // namespace TP2::ex

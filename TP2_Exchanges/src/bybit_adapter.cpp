@@ -13,6 +13,8 @@
 #include <vector>
 #include <deque>
 
+#include <nlohmann/json.hpp>
+
 #include "include/tp2_exchanges/bybit_adapter.hpp"
 #include "include/tp2_net/http.hpp"
 #include "include/tp2_net/websocket.hpp"
@@ -20,11 +22,17 @@
 #include "include/tp2_exchanges/orderbook_assembler.hpp"
 #include "include/tp2_exchanges/parsers/bybit_v5.hpp"
 
+#include "include/tp2_crypto/signer.hpp"
+#include "include/tp2_crypto/utils.hpp"
+
+
+
 namespace TP2::ex {
 
     BybitAdapter::BybitAdapter(std::shared_ptr<TP2::net::IHttpClient> http,
-        std::shared_ptr<TP2::net::IWebSocket> ws)
+        std::shared_ptr<TP2::net::IWebSocket> ws, std::shared_ptr<TP2::net::IWebSocket> private_ws)
         : http_(std::move(http)), ws_(std::move(ws)) {
+       
     }
 
     BybitAdapter::ObHealth BybitAdapter::orderbook_health() const noexcept {
@@ -62,6 +70,49 @@ namespace TP2::ex {
         std::cout << "[bybit][WS] connected (public spot)\n";
         return true;
     }
+
+
+    bool BybitAdapter::connect_private_ws(const std::string& key,
+        const std::string& secret)
+    {
+        const std::string url = "wss://stream.bybit.com/v5/private";
+
+        auto rc = private_ws_->connect(url);
+        if (rc != TP2::net::NetErr::Ok) {
+            std::cerr << "[bybit][privWS] connect failed\n";
+            return false;
+        }
+
+        private_ws_ready_ = true;
+
+        std::string ts = TP2::crypto::now_ms_string();
+        std::string msg = key + ts;
+        std::string sign = TP2::crypto::hmac_sha256_hex(secret, msg);
+
+        nlohmann::json auth;
+        auth["op"] = "auth";
+        auth["args"] = { key, ts, sign };
+
+        private_ws_->send(auth.dump());
+
+        std::cout << "[bybit][privWS] auth sent\n";
+
+        // подписка на ордера
+        nlohmann::json sub;
+        sub["op"] = "subscribe";
+        sub["args"] = { "order" };
+        private_ws_->send(sub.dump());
+
+        std::cout << "[bybit][privWS] subscribed: order\n";
+
+        // логгер всех приватных сообщений
+        private_ws_->on_message([](std::string_view raw) {
+            std::cout << "[bybit][privWS] " << raw << "\n";
+            });
+
+        return true;
+    }
+
 
     OrderBook BybitAdapter::get_orderbook(std::string_view symbol, int depth) {
         // REST V5: /v5/market/orderbook?category=spot&symbol=BTCUSDT&limit=50
@@ -250,8 +301,314 @@ namespace TP2::ex {
         std::cout << "[bybit][WS] subscribed: publicTrade." << symbol << "\n";
     }
 
-    OrderId BybitAdapter::place_order(const OrderSpec&) { return { "bybit","N/A","" }; }
+    OrderId BybitAdapter::place_order(const OrderSpec& spec) { 
 
-    void BybitAdapter::cancel_order(std::string_view, std::string_view) {}
+        std::string api_key_ = std::string("123123");
+        std::string api_secret_ = std::string("123123");
+
+        //Если нет ключа - выкидваем ошибку 
+        if (api_key_.empty() || api_secret_.empty()) {
+            throw ExchangeError("Bybit place_order: API credentials not set");
+        };
+
+
+     
+        nlohmann::json j;
+
+
+
+        // Нам нужно еще получать категорию
+        j["category"] = "spot";
+        j["symbol"] = spec.symbol;
+
+        // может быть Sell or Buy
+       // j["side"] = spec.side;
+        j["side"] = (spec.side == TP2::ex::Side::Sell) ? 1 : 0;
+
+
+        switch (spec.type) {
+        case OrdType::Market:
+            j["orderType"] = "Market";
+            break;
+
+        case OrdType::Limit:
+            j["orderType"] = "Limit";
+            if (!spec.price)
+                throw ExchangeError("Limit order requires price");
+            j["price"] = std::to_string(*spec.price);
+            break;
+
+        case OrdType::Stop:
+            j["orderType"] = "Market";
+            if (!spec.stop_price)
+                throw ExchangeError("Stop order requires stop_price");
+            j["triggerPrice"] = std::to_string(*spec.stop_price);
+
+            // Вот тут надо точнее 
+            j["triggerBy"] = "LastPrice"; 
+            break;
+
+        case OrdType::StopLimit:
+            j["orderType"] = "Limit";
+            if (!spec.stop_price)
+                throw ExchangeError("StopLimit requires stop_price");
+            if (!spec.price)
+                throw ExchangeError("StopLimit requires price");
+            j["price"] = std::to_string(*spec.price);
+            j["triggerPrice"] = std::to_string(*spec.stop_price);
+            j["triggerBy"] = "LastPrice";
+            break;
+
+        case OrdType::PostOnly:
+            j["orderType"] = "Limit";
+            if (!spec.price)
+                throw ExchangeError("PostOnly requires price");
+            j["price"] = std::to_string(*spec.price);
+            j["timeInForce"] = "PostOnly";
+            break;
+        default:
+            break;
+        };
+
+        if (spec.qty)
+            j["qty"] = std::to_string(*spec.qty);
+        else if (spec.quote_qty)
+            // Bybit не поддерживает quoteQty для spot 
+            j["qty"] = std::to_string(*spec.quote_qty); 
+        else
+            throw ExchangeError("Order must have qty");
+
+        if (spec.tif)
+            j["timeInForce"] = *spec.tif;
+
+       
+        if (spec.client_id)
+            j["orderLinkId"] = *spec.client_id;
+
+
+
+
+        nlohmann::json sign_payload;
+
+        std::string body = j.dump();
+        std::string method = "POST";
+        std::string path = "/v5/order/create";
+
+        sign_payload["secret"] = api_secret_;
+        sign_payload["method"] = method;
+        sign_payload["path"] = path;
+        sign_payload["body"] = body;
+        
+
+        TP2::crypto::BybitSigner signer;        
+        std::string sign = signer.sign(sign_payload.dump()); 
+        
+
+
+        TP2::net::HttpRequest req;
+
+        req.method = method;
+
+        // Из конфига выдернуть юрл
+        req.url = "http://api/bybit/market" + path;
+
+        auto res = http_->send(req);
+
+        // Проверка статуса ответа
+        if (res.status != 200) {
+            ExchangeError err("Bybit place_order HTTP error");
+            err.http_status = res.status;
+            err.retryable = res.status >= 500;
+            throw err;
+        }
+
+        nlohmann::json response;
+        try { response = nlohmann::json::parse(res.body); }
+        catch (const std::exception& ex) {
+            ExchangeError err(std::string("JSON parse error: ") + ex.what());
+            err.http_status = res.status;
+            throw err;
+        }
+
+        // Проверка json поля retCode
+        if (response.value("retCode", -9999) != 0) {
+            ExchangeError err("Bybit error: " + response.dump());
+            err.vendor_code = response.value("retCode", -1);
+            err.retryable = false;
+            throw err;
+        }
+
+        auto result = response["result"];
+        OrderId out;
+        out.exchange = "bybit";
+        out.native_id = response.value("orderId", "");
+        out.client_id = response.value("orderLinkId", "");
+
+
+
+        // Открываем приватный сокет
+        if (!private_ws_ready_) {
+            connect_private_ws(api_key_, api_secret_);
+        }
+
+        return {
+            out.exchange,
+            out.native_id,
+            out.client_id
+
+        };
+    
+        //return { "bybit","N/A","" }; 
+    
+    }
+
+    void BybitAdapter::cancel_order(std::string_view symbol, std::string_view order_id) {
+
+        nlohmann::json j;
+
+
+        std::string api_secret_ = std::string("");
+        std::string api_key_ = std::string("");
+
+        j["category"] = "spot";
+        j["symbol"] = symbol;
+        j["orderId"] = order_id;  
+        std::string body = j.dump();
+
+        std::string path = "/v5/order/cancel";
+        std::string method = "POST";
+
+        std::string ts = TP2::crypto::now_ms_string();
+        std::string sign = TP2::crypto::bybit_sign(
+            api_secret_,
+            ts,
+            method,
+            path,
+            body
+        );
+
+        TP2::net::HttpRequest req;
+
+        req.method = method;
+        req.url = "https://api.bybit.com" + path;
+
+
+        req.headers["Content-Type"] = "application/json";
+        req.headers["X-BAPI-API-KEY"] = api_key_;
+        req.headers["X-BAPI-TIMESTAMP"] = ts;
+        req.headers["X-BAPI-SIGN"] = sign;
+        req.headers["X-BAPI-RECV-WINDOW"] = "5000"; 
+
+        req.body = body;
+
+        auto res = http_->send(req);
+
+        if (res.status != 200) {
+            ExchangeError err("Bybit cancel_order HTTP error");
+            err.http_status = res.status;
+            err.retryable = res.status >= 500;
+            throw err;
+        }
+
+
+        nlohmann::json response;
+        try { response = nlohmann::json::parse(res.body); }
+        catch (const std::exception& ex) {
+            ExchangeError err(std::string("JSON parse error: ") + ex.what());
+            err.http_status = res.status;
+            throw err;
+        }
+
+        if (response.value("retCode", -9999) != 0) {
+            ExchangeError err("Bybit error: " + response.dump());
+            err.vendor_code = response.value("retCode", -1);
+            err.retryable = false;
+            throw err;
+        }
+
+        
+      
+    }
+
+
+    void BybitAdapter::cancel_all_orders(std::string_view symbol) {
+
+
+        // ВЫНЕСТИ В КОНСТРУКТОР КЛАССА ИЛИ КОНФИГ
+        std::string api_secret_ = std::string("");
+        std::string api_key_ = std::string("");
+
+        nlohmann::json j;
+
+        // Собираем тело запроса
+        j["symbol"] = symbol;
+        j["category"] = "spot";
+        std::string body = j.dump();
+
+        // Путь и метод запроса
+        std::string path = "/v5/order/cancel-all";
+        std::string method = "POST";
+        std::string ts = TP2::crypto::now_ms_string();
+
+        // Создаем подпись
+        std::string sign = TP2::crypto::bybit_sign(
+            api_secret_,
+            ts,
+            method,
+            path,
+            body
+        );
+
+
+        // Подготовка запроса
+        TP2::net::HttpRequest req;
+        req.method = method;
+        req.url = "https://api.bybit.com" + path;
+
+
+        // Добавляем хедеры
+        req.headers["Content-Type"] = "application/json";
+        req.headers["X-BAPI-API-KEY"] = api_key_;
+        req.headers["X-BAPI-TIMESTAMP"] = ts;
+        req.headers["X-BAPI-SIGN"] = sign;
+        req.headers["X-BAPI-RECV-WINDOW"] = "5000";
+
+        req.body = body;
+
+
+
+        // Отправка запроса
+        auto res = http_->send(req);
+
+        // Проверка статуса
+        if (res.status != 200) {
+            ExchangeError err("Bybit cancel_all_orders HTTP error");
+            err.http_status = res.status;
+            err.retryable = res.status >= 500;
+            throw err;
+        }
+
+        // Парсим ответ с сервера
+        // TODO: Дописать типы
+        nlohmann::json response;
+        try { response = nlohmann::json::parse(res.body); }
+        catch (const std::exception& ex) {
+            ExchangeError err(std::string("JSON parse error: ") + ex.what());
+            err.http_status = res.status;
+            throw err;
+        }
+
+
+        // Проверка retCode
+        if (response.value("retCode", -9999) != 0) {
+            ExchangeError err("Bybit cancel_all_orders error: " + response.dump());
+            err.vendor_code = response.value("retCode", -1);
+            err.retryable = false;
+            throw err;
+        }
+    
+    }
+
+
 
 } // namespace TP2::ex

@@ -17,4 +17,4 @@ private:
     std::shared_ptr<TP2::net::IHttpClient> http_;
     std::shared_ptr<TP2::net::IWebSocket> ws_;
 };
-} // namespace msg5::ex
+} // namespace TP2::ex
