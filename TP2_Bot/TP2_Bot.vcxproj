@@ -123,7 +123,8 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\днс\source\repos\TP2_05\TP2_Net;C:\Users\днс\source\repos\TP2_05\TP2_Exchanges;C:\Users\днс\source\repos\TP2_05\TP2_Crypto;C:\Users\днс\source\repos\TP2_05\TP2_Bot;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\proj\TP2_05\TP2_Net;D:\proj\TP2_05\TP2_Exchanges;D:\proj\TP2_05\TP2_Crypto;D:\proj\TP2_05\TP2_Bot;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalUsingDirectories>D:\proj\TP2_05\TP2_Net;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

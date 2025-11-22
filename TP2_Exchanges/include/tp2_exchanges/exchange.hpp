@@ -36,6 +36,7 @@ struct IExchange {
 
     virtual OrderId place_order(const OrderSpec&) = 0;
     virtual void cancel_order(std::string_view symbol, std::string_view exch_order_id) = 0;
+    virtual void cancel_all_orders(std::string_view symbol) = 0;
 };
 
-} // namespace msg5::ex
+} // namespace TP2::ex

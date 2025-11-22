@@ -47,7 +47,7 @@ struct Trade {
     Trade(double p, double q, TradeSide s, std::int64_t t) : price(p), qty(q), side(s), ts_ms(t) {}
 };
 
-/ Утилиты
+// Утилиты
 inline constexpr const char* to_string(BookSide s) { return s == BookSide::Bid ? "bid" : "ask"; }
 inline constexpr const char* to_string(TradeSide s) { return s == TradeSide::Buy ? "buy" : "sell"; }
 inline constexpr TradeSide opposite(TradeSide s) { return s == TradeSide::Buy ? TradeSide::Sell : TradeSide::Buy; }
