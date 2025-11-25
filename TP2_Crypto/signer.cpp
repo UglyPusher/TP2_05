@@ -11,14 +11,15 @@ namespace TP2::crypto {
 		
 		nlohmann::json j = nlohmann::json::parse(payload);
 
-		std::string ts = now_ms_string();
+		// std::string ts = now_ms_string();
+		uint64_t exp = TP2::crypto::now_ms() + 10000;
+		std::string ts = std::to_string(exp);
 
 
 		return bybit_sign(
-			j.at("secret").get<std::string>(),
+			j.at("api_key").get<std::string>(),
 			ts,
-			j.at("method").get<std::string>(),
-			j.at("path").get<std::string>(),
+			j.at("recvWindow").get<std::string>(),
 			j.at("body").get<std::string>()  // stringified json body
 		);
 	};

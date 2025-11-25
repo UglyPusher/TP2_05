@@ -18,11 +18,21 @@
 namespace TP2::crypto {
 
 
+    uint64_t now_ms() {
+        using namespace std::chrono;
+        return duration_cast<milliseconds>(
+            system_clock::now().time_since_epoch()
+        ).count();
+    }
+
     std::string now_ms_string() {
         using namespace std::chrono;
-        return std::to_string(
-            duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()
-        );
+        auto now = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
+        return std::to_string(now.count());
+        //using namespace std::chrono;
+        //return std::to_string(
+        //    duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count()
+        //);
     }
 
     std::string hex_encode(const unsigned char* data, size_t len) {
@@ -100,13 +110,13 @@ namespace TP2::crypto {
     */
 
     std::string bybit_sign(
-        const std::string& secret,
+        const std::string& api_key,
+        const std::string& recvWindow,
         const std::string& ts,
-        const std::string& method,
-        const std::string& path,
         const std::string& body
     ) {
-        return hmac_sha256_hex(secret, ts + method + path + body);
+		// 5000 это recvWindow по умолчанию
+        return hmac_sha256_hex(api_key, ts + recvWindow + body);
     }
 
 
