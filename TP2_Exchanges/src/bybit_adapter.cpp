@@ -27,13 +27,16 @@
 
 
 
+
 namespace TP2::ex {
 
     BybitAdapter::BybitAdapter(std::shared_ptr<TP2::net::IHttpClient> http,
         std::shared_ptr<TP2::net::IWebSocket> ws, std::shared_ptr<TP2::net::IWebSocket> private_ws)
-        : http_(std::move(http)), ws_(std::move(ws)) {
+        : http_(std::move(http)), ws_(std::move(ws)), private_ws_(std::move(private_ws)) {
        
     }
+
+
 
     BybitAdapter::ObHealth BybitAdapter::orderbook_health() const noexcept {
         return ObHealth{ ob_last_seq_.load(), ob_last_ts_.load(), ob_resyncs_.load(), ob_strict_seq_ };
@@ -71,47 +74,133 @@ namespace TP2::ex {
         return true;
     }
 
+    // Вынести в парсеры !!!!!
+    void BybitAdapter::handle_private_msg(std::string_view raw) {
+    // просто выводим то, что пришло
+
+    const bool ob_debug_ = true;
+    if (ob_debug_) {
+        std::cout << "[bybit][privWS] recv: " << raw << "\n";
+    }
+
+    nlohmann::json j;
+    try {
+        j = nlohmann::json::parse(raw);
+    } catch (...) {
+        return;
+    }
+
+    // системные сообщения: auth, subscribe, ping
+    if (!j.contains("topic")) {
+        return;
+    }
+
+    std::string topic = j.value("topic", "");
+
+    // ----------------------- ORDER -----------------------
+    if (topic == "order") {
+        if (on_order_update_) {
+            for (auto& ord : j["data"]) {
+                on_order_update_(ord);
+            }
+        }
+        return;
+    }
+
+    // ---------------------- POSITION ---------------------
+    if (topic == "position") {
+        if (on_position_update_) {
+            for (auto& pos : j["data"]) {
+                on_position_update_(pos);
+            }
+        }
+        return;
+    }
+}
 
     bool BybitAdapter::connect_private_ws(const std::string& key,
         const std::string& secret)
     {
         const std::string url = "wss://stream.bybit.com/v5/private";
+        const std::string testnet = "wss://stream-testnet.bybit.com/v5/private?max_active_time=1m";
 
-        auto rc = private_ws_->connect(url);
+        auto rc = private_ws_->connect(testnet);
         if (rc != TP2::net::NetErr::Ok) {
             std::cerr << "[bybit][privWS] connect failed\n";
             return false;
         }
 
+        // Сначала устанавливаем обработчик
+        private_ws_->on_message([this](std::string_view raw) {
+            this->handle_private_msg(raw);
+            });
+
         private_ws_ready_ = true;
 
-        std::string ts = TP2::crypto::now_ms_string();
-        std::string msg = key + ts;
-        std::string sign = TP2::crypto::hmac_sha256_hex(secret, msg);
+        // Теперь готовим аутентификацию
+        std::string expires = TP2::crypto::now_ms_string();
+        uint64_t exp = TP2::crypto::now_ms() + 10000;
+
+        std::string sign_message = "GET/realtime" + std::to_string(exp);
+        std::string sign = TP2::crypto::hmac_sha256_hex(secret, sign_message);
+
 
         nlohmann::json auth;
         auth["op"] = "auth";
-        auth["args"] = { key, ts, sign };
+        auth["args"] = nlohmann::json::array({ key, exp, sign });
 
-        private_ws_->send(auth.dump());
+        auto auth_json = auth.dump();
+        std::cout << "[bybit][privWS] Auth JSON: " << auth_json << "\n";
 
+        auto ob = private_ws_->send(auth_json);
         std::cout << "[bybit][privWS] auth sent\n";
-
-        // подписка на ордера
-        nlohmann::json sub;
-        sub["op"] = "subscribe";
-        sub["args"] = { "order" };
-        private_ws_->send(sub.dump());
-
-        std::cout << "[bybit][privWS] subscribed: order\n";
-
-        // логгер всех приватных сообщений
-        private_ws_->on_message([](std::string_view raw) {
-            std::cout << "[bybit][privWS] " << raw << "\n";
-            });
 
         return true;
     }
+
+    void BybitAdapter::private_subscribe_position() {
+        if (!private_ws_ready_) {
+            std::cerr << "[bybit][privWS] not connected; call connect_public_ws() first\n";
+            return;
+        }
+
+        on_position_update_ = [](const nlohmann::json& ord) {
+            std::cout << "[POSITION UPDATE] "
+                << ord.value("symbol", "") << " "
+                << ord.value("orderStatus", "") << " "
+                << ord.value("side", "") << "\n";
+            };
+
+        nlohmann::json sub;
+        sub["op"] = "subscribe";
+        sub["args"] = { "position" };
+        auto ob = private_ws_->send(sub.dump());
+        std::cout << "[bybit][privWS] subscribed: position\n";
+    }
+
+
+    void BybitAdapter::private_subscribe_order()
+    {
+        if (!private_ws_ready_) {
+            std::cerr << "[bybit][privWS] not connected\n";
+            return;
+        }
+
+        on_order_update_ = [](const nlohmann::json& ord) {
+            std::cout << "[ORDER UPDATE] "
+                << ord.value("symbol", "") << " "
+                << ord.value("orderStatus", "") << " "
+                << ord.value("side", "") << "\n";
+            };
+
+        nlohmann::json sub;
+        sub["op"] = "subscribe";
+        sub["args"] = { "order" };
+        auto ob = private_ws_->send(sub.dump());
+        std::cout << "[bybit][privWS] subscribed: order\n";
+
+    }
+
 
 
     OrderBook BybitAdapter::get_orderbook(std::string_view symbol, int depth) {
@@ -303,29 +392,24 @@ namespace TP2::ex {
 
     OrderId BybitAdapter::place_order(const OrderSpec& spec) { 
 
-        std::string api_key_ = std::string("123123");
-        std::string api_secret_ = std::string("123123");
+
+
+         std::string api_key_ = std::string("yPUu6gX0AjQcqRmkR9");
+         std::string  api_secret_ = std::string("uSgxbupka4la3siZ2T0buZoUbsHJBf3JHIMU");
 
         //Если нет ключа - выкидваем ошибку 
         if (api_key_.empty() || api_secret_.empty()) {
             throw ExchangeError("Bybit place_order: API credentials not set");
         };
 
-
-     
         nlohmann::json j;
-
-
-
         // Нам нужно еще получать категорию
         j["category"] = "spot";
         j["symbol"] = spec.symbol;
-
-        // может быть Sell or Buy
-       // j["side"] = spec.side;
-        j["side"] = (spec.side == TP2::ex::Side::Sell) ? 1 : 0;
+        j["side"] = spec.side;
 
 
+		// Тип ордера
         switch (spec.type) {
         case OrdType::Market:
             j["orderType"] = "Market";
@@ -385,34 +469,50 @@ namespace TP2::ex {
         if (spec.client_id)
             j["orderLinkId"] = *spec.client_id;
 
-
+		// Собираем тело запроса и делаем подготовку
+        std::string body = j.dump();
+        std::string method = "POST";
+        std::string path = "/v5/order/create";
+		// Bybit требует recvWindow для подписи м млсекунд
+        std::string recvWindow = "5000";
 
 
         nlohmann::json sign_payload;
 
-        std::string body = j.dump();
-        std::string method = "POST";
-        std::string path = "/v5/order/create";
-
-        sign_payload["secret"] = api_secret_;
-        sign_payload["method"] = method;
-        sign_payload["path"] = path;
         sign_payload["body"] = body;
-        
+		sign_payload["api_key"] = api_key_;
+		sign_payload["recvWindow"] = recvWindow;
+		std::string payload_str = sign_payload.dump();
+		std::cout << "Bybit place_order payload: " << payload_str << "\n";
+
 
         TP2::crypto::BybitSigner signer;        
-        std::string sign = signer.sign(sign_payload.dump()); 
+        std::string sign = signer.sign(payload_str);
         
-
 
         TP2::net::HttpRequest req;
 
         req.method = method;
+        req.url = "https://api-testnet.bybit.com/v5/spread/order/create";
+        req.body = body;
 
-        // Из конфига выдернуть юрл
-        req.url = "http://api/bybit/market" + path;
+        // Хедеры запроса
+        req.headers["X-BAPI-SIGN"] = sign; // Обязательная подпись
+        req.headers["X-BAPI-API-KEY"] = api_key_; // Ключ
+		req.headers["X-BAPI-TIMESTAMP"] = TP2::crypto::now_ms_string(); // Текущее время в мс   
+		req.headers["X-BAPI-RECV-WINDOW"] = recvWindow; // Окно получения (в миллесикундах)
+        req.headers["Content-Type"] = "application/json";
 
+
+		std::cout << "API KEY: " << api_key_ << "\n"
+			<< "X-BAPI-TIMESTAMP: " << req.headers["X-BAPI-TIMESTAMP"] << "\n"
+			<< "X-BAPI-SIGN: " << sign << "\n"
+            ;
+        
+        // Отправка запроса
         auto res = http_->send(req);
+
+		std::cout << "Bybit place_order response: " << res.body << "\n";    
 
         // Проверка статуса ответа
         if (res.status != 200) {
@@ -432,10 +532,13 @@ namespace TP2::ex {
 
         // Проверка json поля retCode
         if (response.value("retCode", -9999) != 0) {
-            ExchangeError err("Bybit error: " + response.dump());
-            err.vendor_code = response.value("retCode", -1);
-            err.retryable = false;
-            throw err;
+            //ExchangeError err("Bybit error: " + response.dump());
+            //err.vendor_code = response.value("retCode", -1);
+            //err.retryable = false;
+            //throw err;
+
+			std::cerr << "Bybit place_order error: " << response.dump() << "\n";
+
         }
 
         auto result = response["result"];
@@ -477,20 +580,27 @@ namespace TP2::ex {
 
         std::string path = "/v5/order/cancel";
         std::string method = "POST";
+        std::string recvWindow = "5000";
+
+
+
+        nlohmann::json sign_payload;
+
+        sign_payload["body"] = body;
+        sign_payload["api_key"] = api_key_;
+        sign_payload["rectWindow"] = recvWindow;
+
+        std::string payload_str = sign_payload.dump();
+
+        TP2::crypto::BybitSigner signer;
 
         std::string ts = TP2::crypto::now_ms_string();
-        std::string sign = TP2::crypto::bybit_sign(
-            api_secret_,
-            ts,
-            method,
-            path,
-            body
-        );
+        std::string sign = signer.sign(payload_str);
 
         TP2::net::HttpRequest req;
 
         req.method = method;
-        req.url = "https://api.bybit.com" + path;
+        req.url = "https://api-testnet.bybit.com" + path;
 
 
         req.headers["Content-Type"] = "application/json";
@@ -549,22 +659,28 @@ namespace TP2::ex {
         std::string path = "/v5/order/cancel-all";
         std::string method = "POST";
         std::string ts = TP2::crypto::now_ms_string();
+		std::string recvWindow = "5000";
+
+
+        nlohmann::json sign_payload;
+
+        sign_payload["body"] = body;
+        sign_payload["api_key"] = api_key_;
+        sign_payload["rectWindow"] = recvWindow;
+
+        std::string payload_str = sign_payload.dump();
+
+        TP2::crypto::BybitSigner signer;
 
         // Создаем подпись
-        std::string sign = TP2::crypto::bybit_sign(
-            api_secret_,
-            ts,
-            method,
-            path,
-            body
-        );
+		std::string sign = signer.sign(payload_str);
 
 
         // Подготовка запроса
         TP2::net::HttpRequest req;
         req.method = method;
         req.url = "https://api.bybit.com" + path;
-
+        req.body = body;
 
         // Добавляем хедеры
         req.headers["Content-Type"] = "application/json";
@@ -573,9 +689,8 @@ namespace TP2::ex {
         req.headers["X-BAPI-SIGN"] = sign;
         req.headers["X-BAPI-RECV-WINDOW"] = "5000";
 
-        req.body = body;
 
-
+		std::cout << "Body: " << body << "\n";
 
         // Отправка запроса
         auto res = http_->send(req);
@@ -609,6 +724,21 @@ namespace TP2::ex {
     
     }
 
+
+    void BybitAdapter::test_subscribe() {
+        std::string key = "";
+        std::string private_key = "";
+
+        if (!private_ws_ready_) {
+            connect_private_ws(key, private_key);
+        };
+
+        private_subscribe_position();
+		private_subscribe_order();
+
+
+
+    }
 
 
 } // namespace TP2::ex

@@ -1,7 +1,8 @@
-#pragma once
+п»ї#pragma once
 #include "exchange.hpp"
 #include <memory>
 #include <chrono>
+#include <nlohmann/json.hpp>
 namespace TP2 { namespace net { struct IHttpClient; class IWebSocket; } namespace crypto { class ISigner; } }
 
 namespace TP2::ex {
@@ -13,8 +14,8 @@ namespace TP2::ex {
             );
         std::string name() const override { return "bybit"; }
 
-        // Явный коннект публичного WS (spot v5). Ставит общий on_message-роутер.
-        // Возвращает true при успехе.
+        // РЇРІРЅС‹Р№ РєРѕРЅРЅРµРєС‚ РїСѓР±Р»РёС‡РЅРѕРіРѕ WS (spot v5). РЎС‚Р°РІРёС‚ РѕР±С‰РёР№ on_message-СЂРѕСѓС‚РµСЂ.
+        // Р’РѕР·РІСЂР°С‰Р°РµС‚ true РїСЂРё СѓСЃРїРµС…Рµ.
         bool connect_public_ws();
 
         struct ObHealth {
@@ -26,26 +27,27 @@ namespace TP2::ex {
         
         ObHealth orderbook_health() const noexcept;
 
-        // Управление жёсткостью контроля последовательности стакана (по умолчанию true)
+        // РЈРїСЂР°РІР»РµРЅРёРµ Р¶С‘СЃС‚РєРѕСЃС‚СЊСЋ РєРѕРЅС‚СЂРѕР»СЏ РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅРѕСЃС‚Рё СЃС‚Р°РєР°РЅР° (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ true)
         void set_orderbook_strict(bool v) noexcept { ob_strict_seq_ = v; }
 
-        // Включить/выключить подробные логи ордербука (по умолчанию off)
+        // Р’РєР»СЋС‡РёС‚СЊ/РІС‹РєР»СЋС‡РёС‚СЊ РїРѕРґСЂРѕР±РЅС‹Рµ Р»РѕРіРё РѕСЂРґРµСЂР±СѓРєР° (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ off)
         void set_orderbook_debug(bool v) noexcept { ob_debug_ = v; }
 
-        // Управление частотой эмиссии собранного стакана
+        // РЈРїСЂР°РІР»РµРЅРёРµ С‡Р°СЃС‚РѕС‚РѕР№ СЌРјРёСЃСЃРёРё СЃРѕР±СЂР°РЅРЅРѕРіРѕ СЃС‚Р°РєР°РЅР°
         void set_orderbook_emit_on_every_delta(bool v) noexcept { ob_emit_each_ = v; }
         void set_orderbook_emit_min_interval_ms(int ms) noexcept { ob_emit_min_interval_ms_ = (ms < 0 ? 0 : ms); }
 
-        // Если ордербук не обновлялся дольше N мс — считаем stale и делаем ресинк (0 = выкл)
+        // Р•СЃР»Рё РѕСЂРґРµСЂР±СѓРє РЅРµ РѕР±РЅРѕРІР»СЏР»СЃСЏ РґРѕР»СЊС€Рµ N РјСЃ вЂ” СЃС‡РёС‚Р°РµРј stale Рё РґРµР»Р°РµРј СЂРµСЃРёРЅРє (0 = РІС‹РєР»)
         void set_orderbook_stale_timeout_ms(int ms) noexcept { ob_stale_timeout_ms_ = (ms < 0 ? 0 : ms); }
+
 
 
 
         // Market data
         OrderBook get_orderbook(std::string_view symbol, int depth) override;
         void subscribe_orderbook(std::string_view symbol, int depth, std::function<void(const OrderBook&)>) override;
-        // Лёгкая проверка стрима трейдов: подписка и проброс "сырого" JSON сообщения.
-        // Позже можно заменить на типизированный парсер.
+        // Р›С‘РіРєР°СЏ РїСЂРѕРІРµСЂРєР° СЃС‚СЂРёРјР° С‚СЂРµР№РґРѕРІ: РїРѕРґРїРёСЃРєР° Рё РїСЂРѕР±СЂРѕСЃ "СЃС‹СЂРѕРіРѕ" JSON СЃРѕРѕР±С‰РµРЅРёСЏ.
+        // РџРѕР·Р¶Рµ РјРѕР¶РЅРѕ Р·Р°РјРµРЅРёС‚СЊ РЅР° С‚РёРїРёР·РёСЂРѕРІР°РЅРЅС‹Р№ РїР°СЂСЃРµСЂ.
         void subscribe_trades_raw(const std::string & symbol,std::function<void(std::string_view)> on_raw);
     
         // Trading (stub for now)
@@ -55,19 +57,37 @@ namespace TP2::ex {
         // Cancel all orders
         void cancel_all_orders(std::string_view symbol) override;
 
+        void test_subscribe();
+
       
     private:
 
-        // Приватный коннект сокета после отправки заявки
+        // РџСЂРёРІР°С‚РЅС‹Р№ РєРѕРЅРЅРµРєС‚ СЃРѕРєРµС‚Р° РїРѕСЃР»Рµ РѕС‚РїСЂР°РІРєРё Р·Р°СЏРІРєРё
         bool connect_private_ws(const std::string& key, const std::string& secret);
         bool private_ws_ready_{ false };
 
 
+
+        // РџРѕРґРїРёСЃРєР° РЅР° С‚СЂРµР№РґС‹ 
+        // Р”РѕР±Р°РІРёС‚СЊ РўРёРї РєРѕС‚РѕСЂС‹Р№ РїСЂРёС…РѕРґРёС‚
+        void private_subscribe_position();
+
+
+        // РџРѕРґРїРёСЃРєР° РЅР° РѕСЂРґРµСЂР°
+		void private_subscribe_order();
+
+        void handle_private_msg(std::string_view raw);
+
+		//РљРѕР»Р±СЌРєРё РЅР° РѕР±РЅРѕРІР»РµРЅРёСЏ РѕСЂРґРµСЂРѕРІ Рё РїРѕР·РёС†РёР№
+        std::function<void(const nlohmann::json&)> on_order_update_;
+        std::function<void(const nlohmann::json&)> on_position_update_;
+
+
         std::shared_ptr<TP2::net::IHttpClient> http_;
-        std::shared_ptr<TP2::net::IWebSocket> ws_; // Обычный сокет
-        std::shared_ptr<TP2::net::IWebSocket> private_ws_; // Приватный сокет
+        std::shared_ptr<TP2::net::IWebSocket> ws_; // РћР±С‹С‡РЅС‹Р№ СЃРѕРєРµС‚
+        std::shared_ptr<TP2::net::IWebSocket> private_ws_; // РџСЂРёРІР°С‚РЅС‹Р№ СЃРѕРєРµС‚
         std::function<void(std::string_view)>  on_trades_raw_;
-        std::function<void(std::string_view)>  ob_ws_handler_; // обработчик сырого WS под стакан
+        std::function<void(std::string_view)>  ob_ws_handler_; // РѕР±СЂР°Р±РѕС‚С‡РёРє СЃС‹СЂРѕРіРѕ WS РїРѕРґ СЃС‚Р°РєР°РЅ
         bool ws_ready_{ false };
         bool ob_strict_seq_{ true };
 
@@ -83,10 +103,10 @@ namespace TP2::ex {
 
         int  ob_stale_timeout_ms_{ 5000 };
 
-        // Для stale-детектора — монотонное время последнего ОБНОВЛЕНИЯ книги
+        // Р”Р»СЏ stale-РґРµС‚РµРєС‚РѕСЂР° вЂ” РјРѕРЅРѕС‚РѕРЅРЅРѕРµ РІСЂРµРјСЏ РїРѕСЃР»РµРґРЅРµРіРѕ РћР‘РќРћР’Р›Р•РќРРЇ РєРЅРёРіРё
         std::atomic<int64_t> ob_last_update_ms_{ 0 };
 
-        // Для шумопонижения: запоминаем последний best bid/ask и время эмиссии
+        // Р”Р»СЏ С€СѓРјРѕРїРѕРЅРёР¶РµРЅРёСЏ: Р·Р°РїРѕРјРёРЅР°РµРј РїРѕСЃР»РµРґРЅРёР№ best bid/ask Рё РІСЂРµРјСЏ СЌРјРёСЃСЃРёРё
         double ob_last_best_bid_{ 0.0 }, ob_last_best_ask_{ 0.0 };
         std::chrono::steady_clock::time_point ob_last_emit_{};
         
