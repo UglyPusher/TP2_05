@@ -129,7 +129,21 @@ HttpResponse WinHttpClient::send(const HttpRequest& req) {
     auto parts = crack_url(req.url);
     if (parts.port == 0) return {0, ""};
     std::wstring method_w = to_wide(req.method.empty() ? std::string("GET") : req.method);
-    std::wstring headers_w; // not used for now
+    // std::wstring headers_w; // not used for now
+    std::wstring headers_w;
+
+    if (!req.headers.empty()) {
+        std::string headers_str;
+
+        for (const auto& header : req.headers) {
+            // Формат WinHTTP: "Header-Name: Header-Value\r\n"
+            headers_str += header.first + ": " + header.second + "\r\n";
+        }
+
+        // Конвертируем в wide string
+        headers_w = to_wide(headers_str);
+
+    }
     return do_request(method_w, parts, req.body, headers_w);
 }
 

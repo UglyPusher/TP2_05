@@ -111,12 +111,13 @@ namespace TP2::crypto {
 
     std::string bybit_sign(
         const std::string& api_key,
+        const std::string& secret,
         const std::string& recvWindow,
         const std::string& ts,
         const std::string& body
     ) {
 		// 5000 это recvWindow по умолчанию
-        return hmac_sha256_hex(api_key, ts + recvWindow + body);
+        return hmac_sha256_hex(secret, ts + api_key + recvWindow + body);
     }
 
 

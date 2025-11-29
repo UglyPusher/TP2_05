@@ -32,6 +32,16 @@ int main()
 
     bybit.test_subscribe();
 
+	auto res = bybit.place_order({
+		.symbol = "BTCUSDT",
+		.side = TP2::ex::Side::Buy,
+		.type = TP2::ex::OrdType::Limit,
+        .price = 96000,
+		.qty = 0.001,
+		.tif = "GTC"
+        });
+
+	std::cout << "Placed order, exchange id: " << res.exchange << "\n";
     std::cin.get();
     return 0;
 

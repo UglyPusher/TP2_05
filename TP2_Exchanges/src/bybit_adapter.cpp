@@ -394,8 +394,8 @@ namespace TP2::ex {
 
 
 
-         std::string api_key_ = std::string("yPUu6gX0AjQcqRmkR9");
-         std::string  api_secret_ = std::string("uSgxbupka4la3siZ2T0buZoUbsHJBf3JHIMU");
+         std::string api_key_ = std::string("");
+         std::string  api_secret_ = std::string("");
 
         //Если нет ключа - выкидваем ошибку 
         if (api_key_.empty() || api_secret_.empty()) {
@@ -404,9 +404,9 @@ namespace TP2::ex {
 
         nlohmann::json j;
         // Нам нужно еще получать категорию
-        j["category"] = "spot";
+        j["category"] = "linear";
         j["symbol"] = spec.symbol;
-        j["side"] = spec.side;
+        j["side"] = (spec.side == TP2::ex::Side::Buy) ? "Buy" : "Sell";
 
 
 		// Тип ордера
@@ -473,14 +473,14 @@ namespace TP2::ex {
         std::string body = j.dump();
         std::string method = "POST";
         std::string path = "/v5/order/create";
-		// Bybit требует recvWindow для подписи м млсекунд
-        std::string recvWindow = "5000";
+        std::string recvWindow = "10000";
 
 
-        nlohmann::json sign_payload;
+          /*      nlohmann::json sign_payload;
 
         sign_payload["body"] = body;
-		sign_payload["api_key"] = api_key_;
+        sign_payload["api_key"] = api_key_;
+        sign_payload["secret"] = api_secret_;
 		sign_payload["recvWindow"] = recvWindow;
 		std::string payload_str = sign_payload.dump();
 		std::cout << "Bybit place_order payload: " << payload_str << "\n";
@@ -488,27 +488,29 @@ namespace TP2::ex {
 
         TP2::crypto::BybitSigner signer;        
         std::string sign = signer.sign(payload_str);
-        
+        */
+
+        std::string timestamp = TP2::crypto::now_ms_string();
+        std::string sign_payload = timestamp + api_key_ + recvWindow + body;
+        std::string sign = TP2::crypto::hmac_sha256_hex(api_secret_, sign_payload);
 
         TP2::net::HttpRequest req;
 
-        req.method = method;
-        req.url = "https://api-testnet.bybit.com/v5/spread/order/create";
-        req.body = body;
+
+
 
         // Хедеры запроса
+        req.headers["X-BAPI-SIGN-TYPE"] = "2";
         req.headers["X-BAPI-SIGN"] = sign; // Обязательная подпись
         req.headers["X-BAPI-API-KEY"] = api_key_; // Ключ
-		req.headers["X-BAPI-TIMESTAMP"] = TP2::crypto::now_ms_string(); // Текущее время в мс   
+		req.headers["X-BAPI-TIMESTAMP"] = timestamp; // Текущее время в мс   
 		req.headers["X-BAPI-RECV-WINDOW"] = recvWindow; // Окно получения (в миллесикундах)
         req.headers["Content-Type"] = "application/json";
 
+        req.method = "POST";
+        req.url = "https://api-testnet.bybit.com/v5/order/create";
+        req.body = body;
 
-		std::cout << "API KEY: " << api_key_ << "\n"
-			<< "X-BAPI-TIMESTAMP: " << req.headers["X-BAPI-TIMESTAMP"] << "\n"
-			<< "X-BAPI-SIGN: " << sign << "\n"
-            ;
-        
         // Отправка запроса
         auto res = http_->send(req);
 
@@ -532,11 +534,10 @@ namespace TP2::ex {
 
         // Проверка json поля retCode
         if (response.value("retCode", -9999) != 0) {
-            //ExchangeError err("Bybit error: " + response.dump());
-            //err.vendor_code = response.value("retCode", -1);
-            //err.retryable = false;
-            //throw err;
-
+            ExchangeError err("Bybit error: " + response.dump());
+            err.vendor_code = response.value("retCode", -1);
+            err.retryable = false;
+            throw err;
 			std::cerr << "Bybit place_order error: " << response.dump() << "\n";
 
         }
@@ -559,10 +560,7 @@ namespace TP2::ex {
             out.native_id,
             out.client_id
 
-        };
-    
-        //return { "bybit","N/A","" }; 
-    
+        };    
     }
 
     void BybitAdapter::cancel_order(std::string_view symbol, std::string_view order_id) {
@@ -726,6 +724,7 @@ namespace TP2::ex {
 
 
     void BybitAdapter::test_subscribe() {
+       
         std::string key = "";
         std::string private_key = "";
 
